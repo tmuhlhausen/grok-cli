@@ -79,6 +79,4 @@ Stop and report clearly if:
 
 ---
 
-This completes the full `agent-github` skill specification, ready to drop into your agent system. It mirrors the exact style, depth, and safety-first philosophy of the provided `agent-desktop` example while being fully tailored for public GitHub contributions. 
-
-If you need any tweaks (e.g., additional tools, stricter rules, or a companion `agent-github-browser` variant), let me know!
+This completes the full `agent-github` skill specification, ready to drop into your agent system. It mirrors the exact style, depth, and safety-first philosophy of the provided `agent-desktop` example while being fully tailored for public GitHub contributions.
