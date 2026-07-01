@@ -13,7 +13,13 @@ import {
   getBatchChatCompletion,
   pollBatchRequestResult,
 } from "../grok/batch";
-import { createProvider, generateTitle as genTitle, resolveModelRuntime, type XaiProvider } from "../grok/client";
+import {
+  createProvider,
+  generateRecap as genRecap,
+  generateTitle as genTitle,
+  resolveModelRuntime,
+  type XaiProvider,
+} from "../grok/client";
 import { DEFAULT_MODEL, getModelInfo, normalizeModelId } from "../grok/models";
 import { toolSetToBatchTools } from "../grok/tool-schemas";
 import { createTools } from "../grok/tools";
@@ -69,10 +75,12 @@ import {
   getCurrentModel,
   getModeSpecificModel,
   loadMcpServers,
+  loadRecapsEnabled,
   loadValidSubAgents,
   type SandboxMode,
   type SandboxSettings,
 } from "../utils/settings";
+import { runSideQuestion, type SideQuestionResult } from "../utils/side-question";
 import { discoverSkills, formatSkillsForPrompt } from "../utils/skills";
 import { buildVerifyDetectPrompt, normalizeVerifyRecipe, prepareVerifySandbox } from "../verify/entrypoint";
 import { runVerifyOrchestration } from "../verify/orchestrator";
@@ -92,8 +100,8 @@ import { containsEncryptedReasoning, sanitizeModelMessages } from "./reasoning";
 import { buildVisionUserMessages } from "./vision-input";
 
 const MAX_TOOL_ROUNDS = 400;
-const VISION_MODEL = "grok-4-1-fast-reasoning";
-const COMPUTER_MODEL = "grok-4.20-0309-reasoning";
+const VISION_MODEL = "grok-4.3";
+const COMPUTER_MODEL = "grok-4.3";
 
 interface AgentOptions {
   persistSession?: boolean;
@@ -164,6 +172,7 @@ ${ENVIRONMENT}
 
 TOOLS:
 - read_file: Read file contents with start_line/end_line for iterative reading. Use for examining code.
+- grep: Fast regex content search across the codebase. Prefer this over bash for finding patterns in files. Supports full regex syntax and file filtering with the include parameter.
 - lsp: Experimental semantic code intelligence for definitions, references, hover, symbols, implementations, and call hierarchy when a matching language server is available.
 - write_file: Create new files or overwrite existing ones with full content.
 - edit_file: Replace a unique string in a file with new content. The old_string must be unique — include enough context lines.
@@ -207,7 +216,7 @@ TOOLS:
 WORKFLOW:
 1. Understand the request
 2. Decide whether a sub-agent should handle the first investigation pass
-3. Use read_file, lsp, and bash to explore the codebase directly when the task is small or tightly scoped
+3. Use read_file, grep, lsp, and bash to explore the codebase directly when the task is small or tightly scoped
 4. Use bash with background=true for dev servers, watchers, or any long-running process — then continue working
 5. Use delegate for read-only work that can run in parallel, then continue productive work
 6. Use edit_file for targeted changes, write_file for new files or full rewrites
@@ -244,6 +253,7 @@ EXAMPLES:
 
 IMPORTANT:
 - Prefer edit_file for surgical changes to existing files — it shows a clean diff.
+- Prefer grep over bash for searching file contents. Use bash only for find, ls, git, and other shell commands.
 - Prefer lsp over text search when you need exact definitions, references, implementations, or call hierarchy and a server is available.
 - Use write_file only for new files or when most of the file is changing.
 - Use read_file instead of cat/head/tail for reading files.
@@ -258,13 +268,14 @@ ${ENVIRONMENT}
 
 TOOLS:
 - read_file: Read file contents for analysis.
+- grep: Fast regex content search across the codebase. Prefer this over bash for finding patterns in files.
 - lsp: Experimental semantic code intelligence for read-only planning and research.
-- bash: ONLY for searching (find, grep, ls) — NEVER modify files.
+- bash: ONLY for searching (find, ls), git inspection — NEVER modify files.
 - task: Delegate a focused task to a sub-agent when deeper research or specialized analysis would help.
 - generate_plan: ALWAYS use this to present your plan. Creates an interactive UI with steps and questions.
 
 BEHAVIOR:
-- Explore the codebase first using read_file and bash to understand the current state
+- Explore the codebase first using read_file, grep, and bash to understand the current state
 - Prefer lsp for exact symbol navigation when a matching server is available
 - ALWAYS call generate_plan to present your plan — never just describe it in text
 - Include clear, ordered steps with affected file paths
@@ -279,8 +290,9 @@ ${ENVIRONMENT}
 
 TOOLS:
 - read_file: Read file contents for context.
+- grep: Fast regex content search across the codebase. Prefer this over bash for finding patterns in files.
 - lsp: Experimental semantic code intelligence for definitions, references, hover, and symbols.
-- bash: ONLY for searching (find, grep, ls) — NEVER modify.
+- bash: ONLY for searching (find, ls), git inspection — NEVER modify.
 - task: Delegate a focused task to a sub-agent when specialized analysis or deeper investigation would help.
 
 BEHAVIOR:
@@ -542,6 +554,7 @@ export class Agent {
   private sendTelegramFile: ((filePath: string) => Promise<ToolResult>) | null = null;
   private batchApi = false;
   private sessionStartHookFired = false;
+  private recapsEnabled = true;
 
   constructor(
     apiKey: string | undefined,
@@ -570,6 +583,7 @@ export class Agent {
     const envMax = Number(process.env.GROK_MAX_TOKENS);
     this.maxTokens = Number.isFinite(envMax) && envMax > 0 ? envMax : 16_384;
     this.batchApi = options.batchApi ?? false;
+    this.recapsEnabled = loadRecapsEnabled();
 
     if (options.persistSession !== false) {
       this.sessionStore = new SessionStore(this.bash.getCwd());
@@ -710,6 +724,49 @@ export class Agent {
     return generated.title;
   }
 
+  getSessionRecap(): string | null {
+    return this.recapsEnabled ? this.session?.recap?.text || null : null;
+  }
+
+  getRecapsEnabled(): boolean {
+    return this.recapsEnabled;
+  }
+
+  setRecapsEnabled(enabled: boolean): void {
+    this.recapsEnabled = enabled;
+  }
+
+  async askSideQuestion(question: string, signal?: AbortSignal): Promise<SideQuestionResult> {
+    if (!this.provider) {
+      return { response: "No API key configured." };
+    }
+
+    const contextParts: string[] = [];
+    let charBudget = 2000;
+    for (let i = this.messages.length - 1; i >= 0 && charBudget > 0; i--) {
+      const msg = this.messages[i];
+      if (msg.role !== "user" && msg.role !== "assistant") continue;
+      const text =
+        typeof msg.content === "string"
+          ? msg.content
+          : Array.isArray(msg.content)
+            ? msg.content
+                .filter((p: { type: string }) => p.type === "text")
+                .map((p: { type: string; text?: string }) => p.text ?? "")
+                .join("")
+            : "";
+      if (!text) continue;
+      const snippet = text.length > 400 ? `${text.slice(0, 400)}…` : text;
+      contextParts.unshift(`[${msg.role}]: ${snippet}`);
+      charBudget -= snippet.length;
+    }
+    const conversationContext = contextParts.join("\n\n");
+
+    const result = await runSideQuestion(question, this.provider, this.modelId, conversationContext, signal);
+    this.recordUsage(result.usage, "other");
+    return result;
+  }
+
   abort(): void {
     this.abortController?.abort();
     this.emitSubagentStatus(null);
@@ -810,6 +867,54 @@ export class Agent {
       this.messages.splice(idx, 1);
       this.messageSeqs.splice(idx, 1);
     }
+  }
+
+  private async refreshSessionRecap(signal?: AbortSignal): Promise<void> {
+    if (!this.recapsEnabled || !this.provider || !this.sessionStore || !this.session) {
+      return;
+    }
+
+    try {
+      const prompt = this.buildRecapPrompt();
+      if (!prompt) {
+        return;
+      }
+
+      const generated = await genRecap(this.provider, prompt, withAbortTimeout(signal, 8_000));
+      this.recordUsage(generated.usage, "recap", generated.modelId);
+      if (!generated.recap) {
+        return;
+      }
+
+      this.sessionStore.setRecap(this.session.id, {
+        text: generated.recap,
+        model: generated.modelId,
+        updatedAt: new Date(),
+      });
+      this.session = this.sessionStore.getRequiredSession(this.session.id);
+    } catch {
+      // Recaps are best-effort and should never make the completed turn fail.
+    }
+  }
+
+  private buildRecapPrompt(): string | null {
+    if (!this.session) {
+      return null;
+    }
+
+    const transcript = formatEntriesForRecap(buildChatEntries(this.session.id), 5_000);
+    if (!transcript) {
+      return null;
+    }
+
+    const sections = [
+      "Refresh the saved recap for this coding session using the latest transcript.",
+      this.session.recap?.text
+        ? `Existing recap:\n${truncate(this.session.recap.text, 1_200)}`
+        : "Existing recap:\n(none)",
+      `Session transcript:\n${transcript}`,
+    ];
+    return sections.join("\n\n");
   }
 
   private recordUsage(
@@ -1598,6 +1703,7 @@ export class Agent {
               this.recordUsage(totalUsage, "message", runtime.modelId);
             }
             this.appendCompletedTurn(userModelMessage, turnMessages);
+            await this.refreshSessionRecap(signal);
             yield { type: "done" };
             return;
           }
@@ -1744,7 +1850,8 @@ export class Agent {
     await this.fireHook(promptInput, signal).catch(() => {});
 
     await this.consumeBackgroundNotifications();
-    const userModelMessage: ModelMessage = { role: "user", content: userMessage };
+    const userModelMessages = await buildVisionUserMessages(userMessage, this.bash.getCwd(), signal);
+    const userModelMessage = userModelMessages[0] ?? ({ role: "user", content: userMessage } satisfies ModelMessage);
     this.messages.push(userModelMessage);
     this.messageSeqs.push(null);
 
@@ -2016,6 +2123,7 @@ export class Agent {
             const response = await result.response;
             if (!signal.aborted) {
               this.appendCompletedTurn(userModelMessage, sanitizeModelMessages(response.messages));
+              await this.refreshSessionRecap(signal);
               streamOk = true;
             }
           } catch (responseError: unknown) {
@@ -2038,6 +2146,7 @@ export class Agent {
 
           if (!streamOk && assistantText.trim()) {
             this.appendCompletedTurn(userModelMessage, [{ role: "assistant", content: assistantText }]);
+            await this.refreshSessionRecap(signal);
           }
 
           const stopInput: StopHookInput = {
@@ -2598,6 +2707,53 @@ function firstLine(text: string): string {
 
 function truncate(text: string, max: number): string {
   return text.length <= max ? text : `${text.slice(0, max - 1)}…`;
+}
+
+function formatEntriesForRecap(entries: ChatEntry[], maxChars: number): string {
+  const lines: string[] = [];
+  let remaining = maxChars;
+
+  for (let i = entries.length - 1; i >= 0 && remaining > 0; i--) {
+    const line = formatRecapEntry(entries[i]!);
+    if (!line) {
+      continue;
+    }
+
+    const bounded = truncate(line, Math.min(remaining, 520));
+    if (!bounded.trim()) {
+      continue;
+    }
+
+    lines.unshift(bounded);
+    remaining -= bounded.length + 1;
+  }
+
+  return lines.join("\n");
+}
+
+function formatRecapEntry(entry: ChatEntry): string | null {
+  const content = entry.content.trim();
+  if (!content) {
+    return null;
+  }
+
+  switch (entry.type) {
+    case "user":
+      return `[User] ${truncate(content, 420)}`;
+    case "assistant":
+      return `[Assistant] ${truncate(content, 420)}`;
+    case "tool_result":
+      return `[Tool ${entry.toolResult?.success === false ? "error" : "result"}] ${truncate(content, 260)}`;
+    default:
+      return null;
+  }
+}
+
+function withAbortTimeout(signal: AbortSignal | undefined, timeoutMs: number): AbortSignal | undefined {
+  if (typeof AbortSignal.timeout !== "function") {
+    return signal;
+  }
+  return combineAbortSignals(signal, AbortSignal.timeout(timeoutMs));
 }
 
 function combineAbortSignals(...signals: Array<AbortSignal | undefined>): AbortSignal | undefined {

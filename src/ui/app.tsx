@@ -55,6 +55,7 @@ import {
   saveMcpServers,
   savePaymentSettings,
   saveProjectSettings,
+  saveRecapsEnabled,
   saveUserSettings,
 } from "../utils/settings";
 import { discoverSkills, formatSkillsForChat } from "../utils/skills";
@@ -68,6 +69,7 @@ import {
   SubagentEditorModal,
   SubagentsBrowserModal,
 } from "./agents-modal";
+import { BtwOverlay, type BtwState } from "./components/btw-overlay.js";
 import { SuggestionOverlay } from "./components/SuggestionOverlay.js";
 import { type TypeaheadState, useTypeahead } from "./hooks/useTypeahead.js";
 import { Markdown } from "./markdown";
@@ -81,6 +83,7 @@ import {
   PlanView,
 } from "./plan";
 import { buildScheduleBrowseRows, ScheduleBrowserModal } from "./schedule-modal";
+import { filterSlashMenuItems, SLASH_MENU_ITEMS, type SlashMenuItem } from "./slash-menu";
 import {
   buildAssistantEntry,
   buildToolResultEntry,
@@ -289,31 +292,6 @@ const _LINE = {
   rightT: "━",
 };
 
-interface SlashMenuItem {
-  id: string;
-  label: string;
-  description: string;
-}
-
-const SLASH_MENU_ITEMS: SlashMenuItem[] = [
-  { id: "exit", label: "exit", description: "Quit the CLI" },
-  { id: "help", label: "help", description: "Show available commands" },
-  { id: "remote-control", label: "remote-control", description: "Remote control" },
-  { id: "agents", label: "agents", description: "Manage custom sub-agents" },
-  { id: "schedule", label: "schedule", description: "View scheduled runs" },
-  { id: "mcp", label: "mcp", description: "Manage MCP servers" },
-  { id: "sandbox", label: "sandbox", description: "Select shell sandbox mode" },
-  { id: "wallet", label: "wallet", description: "Wallet and payment settings" },
-  { id: "models", label: "models", description: "Select a model" },
-  { id: "new", label: "new session", description: "Start a new session" },
-  { id: "commit-push", label: "commit & push", description: "Commit and push" },
-  { id: "commit-pr", label: "commit & pr", description: "Commit and open PR" },
-  { id: "review", label: "review", description: "Review recent changes" },
-  { id: "verify", label: "verify", description: "Run local verification" },
-  { id: "skills", label: "skills", description: "Manage skills" },
-  { id: "update", label: "update", description: "Update grok to the latest version" },
-];
-
 const REVIEW_PROMPT = `Review all current changes in this repository. Follow these steps:
 
 1. Run \`git status\` to see which files have been modified, staged, or are untracked.
@@ -355,6 +333,8 @@ const BUILTIN_TYPED_SLASH_COMMANDS = new Set([
   "/model",
   "/models",
   "/sandbox",
+  "/recap",
+  "/recaps",
   "/remote-control",
   "/mcp",
   "/mcps",
@@ -370,6 +350,7 @@ const BUILTIN_TYPED_SLASH_COMMANDS = new Set([
   "/commit-push",
   "/commit-pr",
   "/wallet",
+  "/btw",
 ]);
 
 interface SandboxRow {
@@ -469,6 +450,12 @@ const SANDBOX_ROWS: SandboxRow[] = [
 
 function getSandboxVisibleRows(mode: SandboxMode): SandboxRow[] {
   return mode === "shuru" ? SANDBOX_ROWS : SANDBOX_ROWS.slice(0, 1);
+}
+
+const RECAP_OPTIONS = ["Off", "On"] as const;
+
+function formatRecapsEnabled(enabled: boolean): (typeof RECAP_OPTIONS)[number] {
+  return enabled ? "On" : "Off";
 }
 
 interface WalletDisplayInfo {
@@ -628,6 +615,8 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
   const [sandboxSettingsFocusIndex, setSandboxSettingsFocusIndex] = useState(0);
   const [sandboxSettingsEditing, setSandboxSettingsEditing] = useState<string | null>(null);
   const [sandboxSettingsEditBuffer, setSandboxSettingsEditBuffer] = useState("");
+  const [showRecapPicker, setShowRecapPicker] = useState(false);
+  const [recapsEnabled, setRecapsEnabledState] = useState(() => agent.getRecapsEnabled());
   const [showWalletPicker, setShowWalletPicker] = useState(false);
   const [walletSettings, setWalletSettings] = useState<Required<PaymentSettings>>(() => loadPaymentSettings());
   const [walletFocusIndex, setWalletFocusIndex] = useState(0);
@@ -651,11 +640,15 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
   const [activeToolCalls, setActiveToolCalls] = useState<ToolCall[]>([]);
   const [sessionTitle, setSessionTitle] = useState<string | null>(() => agent.getSessionTitle());
   const [sessionId, setSessionId] = useState<string | null>(() => agent.getSessionId());
+  const [sessionRecap, setSessionRecap] = useState<string | null>(() => agent.getSessionRecap());
   const [showApiKeyModal, setShowApiKeyModal] = useState(() => !initialHasApiKey);
   const [apiKeyError, setApiKeyError] = useState<string | null>(null);
   const [showSlashMenu, setShowSlashMenu] = useState(false);
   const [slashMenuIndex, setSlashMenuIndex] = useState(0);
   const [slashSearchQuery, setSlashSearchQuery] = useState("");
+  const [btwState, setBtwState] = useState<BtwState | null>(null);
+  const btwAbortRef = useRef<AbortController | null>(null);
+  const btwStateRef = useRef<BtwState | null>(null);
   const [reasoningEffortByModel, setReasoningEffortByModel] = useState<Record<string, ReasoningEffort>>(() =>
     Object.fromEntries(
       Object.entries(loadUserSettings().reasoningEffortByModel ?? {}).map(([modelId, effort]) => [
@@ -823,13 +816,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
       )
     : MODELS;
   const filteredModelIds = filteredModels.map((m) => m.id);
-  const filteredSlashItems = slashSearchQuery
-    ? SLASH_MENU_ITEMS.filter(
-        (item) =>
-          item.label.toLowerCase().includes(slashSearchQuery.toLowerCase()) ||
-          item.description.toLowerCase().includes(slashSearchQuery.toLowerCase()),
-      )
-    : SLASH_MENU_ITEMS;
+  const filteredSlashItems = filterSlashMenuItems(SLASH_MENU_ITEMS, slashSearchQuery);
   const mcpRows = buildMcpBrowseRows(mcpServers, POPULAR_MCP_CATALOG, mcpSearchQuery);
   const mcpEditorFields = mcpEditorDraft.transport === "stdio" ? MCP_STDIO_FIELDS : MCP_REMOTE_FIELDS;
   const agentRows = useMemo(
@@ -877,6 +864,23 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
     setSandboxSettingsEditing(null);
     setSandboxSettingsEditBuffer("");
     setShowSandboxPicker(true);
+  }, []);
+
+  const applyRecapsEnabled = useCallback(
+    (enabled: boolean) => {
+      agent.setRecapsEnabled(enabled);
+      for (const telegramAgent of telegramAgentsRef.current.values()) {
+        telegramAgent.setRecapsEnabled(enabled);
+      }
+      setRecapsEnabledState(enabled);
+      saveRecapsEnabled(enabled);
+      setSessionRecap(agent.getSessionRecap());
+    },
+    [agent],
+  );
+
+  const openRecapPicker = useCallback(() => {
+    setShowRecapPicker(true);
   }, []);
 
   const applyWalletSettings = useCallback((next: Required<PaymentSettings>) => {
@@ -1553,6 +1557,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
           });
           setSessionTitle(activeTurn.agent.getSessionTitle());
           setSessionId(activeTurn.agent.getSessionId());
+          setSessionRecap(activeTurn.agent.getSessionRecap());
         } else if (activeTurn.kind === "telegram") {
           syncTelegramTurnEntries(activeTurn);
         }
@@ -1956,6 +1961,15 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
 
   const interruptActiveRun = useCallback(
     (key?: KeyEvent) => {
+      if (btwStateRef.current) {
+        btwAbortRef.current?.abort();
+        btwAbortRef.current = null;
+        btwStateRef.current = null;
+        setBtwState(null);
+        key?.preventDefault();
+        key?.stopPropagation();
+        return true;
+      }
       if (!isProcessingRef.current) return false;
       key?.preventDefault();
       key?.stopPropagation();
@@ -2021,6 +2035,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
     clearLiveTurnUi();
     setSessionTitle(snapshot?.session.title ?? null);
     setSessionId(snapshot?.session.id ?? agent.getSessionId());
+    setSessionRecap(agent.getSessionRecap());
     setActivePlan(null);
     setPqs(initialPlanQuestionsState());
     replacePasteBlocks([]);
@@ -2214,6 +2229,10 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
         openSandboxPicker();
         return true;
       }
+      if (c === "/recap" || c === "/recaps") {
+        openRecapPicker();
+        return true;
+      }
       if (c === "/wallet") {
         openWalletPicker();
         return true;
@@ -2255,6 +2274,40 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
         processMessage(COMMIT_PR_PROMPT);
         return true;
       }
+      if (c.startsWith("/btw ") || c === "/btw") {
+        const question = cmd.trim().slice(4).trim();
+        if (!question) {
+          setMessages((prev) => [
+            ...prev,
+            buildAssistantEntry("Usage: /btw <question>\nExample: /btw what does useEffect cleanup do?"),
+          ]);
+          return true;
+        }
+        const ac = new AbortController();
+        btwAbortRef.current = ac;
+        const loadingState: BtwState = { status: "loading", question };
+        btwStateRef.current = loadingState;
+        setBtwState(loadingState);
+        agent
+          .askSideQuestion(question, ac.signal)
+          .then((result) => {
+            if (ac.signal.aborted) return;
+            const doneState: BtwState = { status: "done", question, answer: result.response };
+            btwStateRef.current = doneState;
+            setBtwState(doneState);
+          })
+          .catch((err) => {
+            if (ac.signal.aborted) return;
+            const errState: BtwState = {
+              status: "error",
+              question,
+              error: err instanceof Error ? err.message : String(err),
+            };
+            btwStateRef.current = errState;
+            setBtwState(errState);
+          });
+        return true;
+      }
       const customSubagentCommand = parseCustomSubagentSlashCommand(cmd, subAgents);
       if (customSubagentCommand) {
         if (!customSubagentCommand.prompt) {
@@ -2277,6 +2330,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
       handleExit,
       openAgentsModal,
       openMcpModal,
+      openRecapPicker,
       openSandboxPicker,
       openWalletPicker,
       openScheduleModal,
@@ -2301,6 +2355,9 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
           break;
         case "sandbox":
           openSandboxPicker();
+          break;
+        case "recaps":
+          openRecapPicker();
           break;
         case "wallet":
           openWalletPicker();
@@ -2353,6 +2410,10 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
         case "commit-pr":
           processMessage(COMMIT_PR_PROMPT);
           break;
+        case "btw":
+          inputRef.current?.clear();
+          inputRef.current?.insertText("/btw ");
+          break;
         case "update":
           setIsUpdating(true);
           setUpdateOutput(null);
@@ -2368,6 +2429,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
       handleExit,
       openAgentsModal,
       openMcpModal,
+      openRecapPicker,
       openSandboxPicker,
       openWalletPicker,
       openScheduleModal,
@@ -2383,6 +2445,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
     showTelegramPairModal ||
     showMcpModal ||
     showSandboxPicker ||
+    showRecapPicker ||
     showWalletPicker ||
     !!pendingPaymentApproval ||
     showScheduleModal ||
@@ -2451,8 +2514,21 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
     [pqs, isSinglePlan, submitPlanAnswers],
   );
 
+  const dismissBtw = useCallback(() => {
+    btwAbortRef.current?.abort();
+    btwAbortRef.current = null;
+    btwStateRef.current = null;
+    setBtwState(null);
+  }, []);
+
   const handleKey = useCallback(
     (key: KeyEvent) => {
+      if (btwState) {
+        if (isEscapeKey(key) || key.name === "return") {
+          dismissBtw();
+        }
+        return;
+      }
       if (showPlanPanel) {
         const q = planQuestions[pqs.tab];
 
@@ -2941,6 +3017,29 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
         }
         return;
       }
+      if (showRecapPicker) {
+        if (isEscapeKey(key)) {
+          setShowRecapPicker(false);
+          return;
+        }
+        if (key.name === "left" || key.name === "right") {
+          const current = formatRecapsEnabled(recapsEnabled);
+          const idx = RECAP_OPTIONS.indexOf(current);
+          const next =
+            key.name === "right"
+              ? RECAP_OPTIONS[Math.min(RECAP_OPTIONS.length - 1, idx + 1)]
+              : RECAP_OPTIONS[Math.max(0, idx - 1)];
+          if (next && next !== current) {
+            applyRecapsEnabled(next === "On");
+          }
+          return;
+        }
+        if (key.name === "return") {
+          applyRecapsEnabled(!recapsEnabled);
+          return;
+        }
+        return;
+      }
       if (showWalletPicker) {
         if (isEscapeKey(key)) {
           setShowWalletPicker(false);
@@ -3168,11 +3267,13 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
       agentsEditorField,
       agentsModalIndex,
       beginTelegramFromConnect,
+      btwState,
       closeApiKeyModal,
       connectModalIndex,
       cycleMode,
       cycleMcpEditorTransport,
       deleteSavedMcp,
+      dismissBtw,
       dismissPlan,
       editingSubagent,
       editSavedMcp,
@@ -3208,8 +3309,10 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
       planTabCount,
       pqs,
       removeEditingSubagent,
+      applyRecapsEnabled,
       applySandboxMode,
       applySandboxSettings,
+      recapsEnabled,
       sandboxSettings,
       sandboxSettingsEditing,
       sandboxSettingsEditBuffer,
@@ -3217,6 +3320,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
       sandboxMode,
       showModelPicker,
       showPlanPanel,
+      showRecapPicker,
       showSandboxPicker,
       pendingPaymentApproval,
       processMessage,
@@ -3381,8 +3485,10 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
               {showPlanPanel && <PlanQuestionsPanel t={t} questions={planQuestions} state={pqs} />}
               {pendingPaymentApproval && <PaymentApprovalPanel t={t} payment={pendingPaymentApproval} />}
             </scrollbox>
+            {btwState && <BtwOverlay state={btwState} theme={t} />}
             {/* Prompt */}
-            <box flexShrink={0}>
+            <box flexShrink={0} flexDirection="column">
+              {sessionRecap ? <RecapBanner t={t} recap={sessionRecap} /> : null}
               <PromptBox
                 t={t}
                 inputRef={inputRef}
@@ -3598,6 +3704,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
           height={height}
         />
       )}
+      {showRecapPicker && <RecapPickerModal t={t} enabled={recapsEnabled} width={width} height={height} />}
       {showSandboxPicker && (
         <SandboxPickerModal
           t={t}
@@ -3675,6 +3782,17 @@ function SessionHeader({
         <box flexGrow={1} />
         {sessionId ? <text fg={t.textDim}>{sessionId}</text> : null}
       </box>
+    </box>
+  );
+}
+
+function RecapBanner({ t, recap }: { t: Theme; recap: string }) {
+  return (
+    <box width="100%" paddingBottom={1}>
+      <text>
+        <span style={{ fg: t.textDim }}>{"※ recap: "}</span>
+        <span style={{ fg: t.textMuted }}>{recap}</span>
+      </text>
     </box>
   );
 }
@@ -5401,6 +5519,67 @@ function SandboxPickerModal({
               ? "type value  enter confirm  esc cancel"
               : "arrows navigate  left/right toggle  enter edit  esc close"}
           </text>
+        </box>
+      </box>
+    </box>
+  );
+}
+
+function RecapPickerModal({
+  t,
+  enabled,
+  width,
+  height,
+}: {
+  t: Theme;
+  enabled: boolean;
+  width: number;
+  height: number;
+}) {
+  const panelHeight = Math.min(7, Math.floor(height * 0.6));
+  const top = bottomAlignedModalTop(height, panelHeight);
+  const overlayBg = "#000000cc" as string;
+  const display = formatRecapsEnabled(enabled);
+
+  return (
+    <box
+      position="absolute"
+      left={0}
+      top={0}
+      width={width}
+      height={height}
+      alignItems="center"
+      paddingTop={top}
+      backgroundColor={overlayBg}
+    >
+      <box
+        width={Math.min(64, width - 6)}
+        height={panelHeight}
+        backgroundColor={t.backgroundPanel}
+        paddingTop={1}
+        paddingBottom={1}
+        flexDirection="column"
+      >
+        <box flexShrink={0} flexDirection="row" justifyContent="space-between" paddingLeft={2} paddingRight={2}>
+          <text fg={t.primary}>
+            <b>{"Recap settings"}</b>
+          </text>
+          <text fg={t.textMuted}>{"esc"}</text>
+        </box>
+        <box flexGrow={1} minHeight={0}>
+          <box backgroundColor={t.selectedBg} paddingLeft={2} paddingRight={2} width="100%">
+            <box width="100%" flexDirection="row" justifyContent="space-between">
+              <text fg={t.selected}>{"Recaps"}</text>
+              <text fg={t.primary}>
+                {"< "}
+                {display}
+                {" >"}
+              </text>
+            </box>
+          </box>
+        </box>
+        <box flexShrink={0} paddingLeft={2} paddingRight={2} paddingTop={1}>
+          <text fg={t.textMuted}>{"left/right toggle  enter cycle  esc close"}</text>
         </box>
       </box>
     </box>

@@ -1,4 +1,4 @@
-# There are many coding agents. **This one is powered by Grok.**
+# grok-cli: an open-source coding agent for the Grok API
 
 [![CI](https://github.com/superagent-ai/grok-cli/actions/workflows/typecheck.yml/badge.svg)](https://github.com/superagent-ai/grok-cli/actions/workflows/typecheck.yml)
 [![npm](https://img.shields.io/npm/v/grok-dev.svg)](https://www.npmjs.com/package/grok-dev)
@@ -6,11 +6,9 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![Bun](https://img.shields.io/badge/Bun-1.x-000000?logo=bun&logoColor=white)](https://bun.sh/)
 
-The rest borrowed from each other. We borrowed from *all of them*, then wired it to **Grok**—real-time **X search**, **web search**, `grok-code-fast-1` and the full Grok model lineup, **sub-agents on by default**, **remote control via Telegram** (pair once, drive the agent from your phone while the CLI runs), and a terminal UI that doesn’t feel like it was assembled in a hurry.
+> **Disclaimer:** This project is community-built, open-source, and **not affiliated with, endorsed by, or sponsored by xAI Corp.** "Grok" is a trademark of xAI Corp. This tool uses the publicly available Grok API.
 
-Open source. Terminal-native. Built with **Bun** and **OpenTUI**. If you want vibes *and* velocity, you’re in the right repo.
-
-Community-built and unofficial. This project is not affiliated with or endorsed by xAI, and it is not the official Grok CLI.
+An open-source terminal coding agent that connects to xAI’s Grok API — real-time **X search**, **web search**, the full Grok model lineup, **sub-agents on by default**, **remote control via Telegram** (pair once, drive the agent from your phone while the CLI runs), and a terminal UI built with **Bun** and **OpenTUI**.
 
 [https://github.com/user-attachments/assets/7ca4f6df-50ca-4e9c-91b2-d4abad5c66cb](https://github.com/user-attachments/assets/7ca4f6df-50ca-4e9c-91b2-d4abad5c66cb)
 
@@ -175,19 +173,19 @@ You keep using a text model for the session, and Grok saves generated media unde
 
 | Thing                             | What it means                                                                                                                                                                                                              |
 | --------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Grok-native**                   | Defaults tuned for Grok; models like `**grok-code-fast-1`**, `**grok-4-1-fast-reasoning**`, `**grok-4.20-multi-agent-0309**`, plus flagship and fast variants—run `grok models` for the full menu.                         |
-| **X + web search**                | `**search_x`** and `**search_web**` tools—live posts and docs without pretending the internet stopped in 2023.                                                                                                             |
-| **Media generation**              | Built-in `**generate_image`** and `**generate_video**` tools for text-to-image, image editing, text-to-video, and image-to-video flows. Generated files are saved locally so you can reuse them after the xAI URLs expire. |
-| **Sub-agents (default behavior)** | Foreground `**task`** delegation (e.g. explore, general, or computer) plus background `**delegate**` for read-only deep dives—parallelize like you mean it.                                                                |
-| **Verify**                        | `**/verify`** or `**--verify**` — inspects your app, builds, tests, boots it, and runs browser smoke checks in a sandboxed environment. Screenshots and video included.                                                    |
-| **Computer use**                  | Built-in `**computer`** sub-agent for host desktop automation via `**agent-desktop**`. It prefers semantic accessibility snapshots and stable refs, with screenshots saved under `**.grok/computer/**` when requested.     |
-| **Custom sub-agents**             | Define named agents with `**subAgents`** in `**~/.grok/user-settings.json**` and manage them from the TUI with `**/agents**`.                                                                                              |
+| **Built for the Grok API**        | Defaults tuned for the xAI API; models like `grok-4.3`, `grok-4.20-non-reasoning`, `grok-4.20-multi-agent-0309`, plus current flagship and multi-agent variants—run `grok models` for the full menu.                       |
+| **X + web search**                | `**search_x`** and `**search_web`** tools—live posts and docs without pretending the internet stopped in 2023.                                                                                                             |
+| **Media generation**              | Built-in `**generate_image`** and `**generate_video`** tools for text-to-image, image editing, text-to-video, and image-to-video flows. Generated files are saved locally so you can reuse them after the xAI URLs expire. |
+| **Sub-agents (default behavior)** | Foreground `**task`** delegation (e.g. explore, general, or computer) plus background `**delegate`** for read-only deep dives—parallelize like you mean it.                                                                |
+| **Verify**                        | `**/verify`** or `**--verify`** — inspects your app, builds, tests, boots it, and runs browser smoke checks in a sandboxed environment. Screenshots and video included.                                                    |
+| **Computer use**                  | Built-in `**computer`** sub-agent for host desktop automation via `**agent-desktop`**. It prefers semantic accessibility snapshots and stable refs, with screenshots saved under `**.grok/computer/**` when requested.     |
+| **Custom sub-agents**             | Define named agents with `**subAgents`** in `**~/.grok/user-settings.json`** and manage them from the TUI with `**/agents**`.                                                                                              |
 | **Remote control**                | Pair **Telegram** from the TUI (`/remote-control` → Telegram): DM your bot, `**/pair`**, approve the code in-terminal. Keep the CLI running while you ping it from your phone.                                             |
 | **No “mystery meat” UI**          | OpenTUI React terminal UI—fast, keyboard-driven, not whatever glitchy thing you’re thinking of.                                                                                                                            |
-| **Skills**                        | Agent Skills under `**.agents/skills/<name>/SKILL.md`** (project) or `**~/.agents/skills/**` (user). Use `**/skills**` in the TUI to list what’s installed.                                                                |
-| **MCPs**                          | Extend with Model Context Protocol servers—configure via `**/mcps`** in the TUI or `**.grok/settings.json**` (`mcpServers`).                                                                                               |
+| **Skills**                        | Agent Skills under `**.agents/skills/<name>/SKILL.md`** (project) or `**~/.agents/skills/`** (user). Use `**/skills**` in the TUI to list what’s installed.                                                                |
+| **MCPs**                          | Extend with Model Context Protocol servers—configure via `**/mcps`** in the TUI or `**.grok/settings.json`** (`mcpServers`).                                                                                               |
 | **Sessions**                      | Conversations persist; `**--session latest`** picks up where you left off.                                                                                                                                                 |
-| **Headless**                      | `**--prompt`** / `**-p**` for non-interactive runs—pipe it, script it, bench it.                                                                                                                                           |
+| **Headless**                      | `**--prompt`** / `**-p`** for non-interactive runs—pipe it, script it, bench it.                                                                                                                                           |
 | **Hackable**                      | TypeScript, clear agent loop, bash-first tools—fork it, shamelessly.                                                                                                                                                       |
 
 
@@ -230,7 +228,7 @@ Optional `**subAgents**` — custom foreground sub-agents. Each entry needs `**n
   "subAgents": [
     {
       "name": "security-review",
-      "model": "grok-code-fast-1",
+      "model": "grok-4.3",
       "instruction": "Prioritize security implications and suggest concrete fixes."
     }
   ]
@@ -252,35 +250,11 @@ Optional: `**GROK_BASE_URL**` (default `https://api.x.ai/v1`), `**GROK_MODEL**`,
 
 ### Voice & audio messages
 
-Send a voice note or audio attachment in Telegram and Grok will transcribe it locally with **[whisper.cpp](https://github.com/ggml-org/whisper.cpp)** before passing the text to the agent. No cloud STT service is involved — everything runs on your machine.
+Send a voice note or audio attachment in Telegram and Grok will transcribe it with the **Grok Speech-to-Text API** (`POST https://api.x.ai/v1/stt`) before passing the text to the agent. The endpoint accepts Telegram's OGG/Opus voice notes and common audio containers (MP3, WAV, M4A, FLAC, AAC) directly — no local model download, `whisper-cli`, or `ffmpeg` required.
 
 #### Prerequisites
 
-
-| Dependency      | Why                                                             | Install (macOS)            |
-| --------------- | --------------------------------------------------------------- | -------------------------- |
-| **whisper-cli** | Runs the actual speech-to-text inference                        | `brew install whisper-cpp` |
-| **ffmpeg**      | Converts Telegram voice notes (OGG/Opus) to WAV for whisper.cpp | `brew install ffmpeg`      |
-
-
-After installing, verify both are available:
-
-```bash
-whisper-cli -h
-ffmpeg -version
-```
-
-#### Download a Whisper model
-
-Grok CLI auto-downloads the configured model on first use, but you can pre-download it:
-
-```bash
-mkdir -p ~/.grok/models/stt/whisper.cpp
-curl -L https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.en.bin \
-  -o ~/.grok/models/stt/whisper.cpp/ggml-tiny.en.bin
-```
-
-Available models (trade size for accuracy): `tiny.en` (75 MB), `base.en` (142 MB), `small.en` (466 MB).
+- A valid `GROK_API_KEY` (the same key used for the agent). Transcription reuses the CLI's `apiKey` / `baseURL` resolution, so if the agent can reach xAI, transcription will too.
 
 #### Configure in `~/.grok/user-settings.json`
 
@@ -290,10 +264,6 @@ Available models (trade size for accuracy): `tiny.en` (75 MB), `base.en` (142 MB
     "botToken": "YOUR_BOT_TOKEN",
     "audioInput": {
       "enabled": true,
-      "binaryPath": "/opt/homebrew/bin/whisper-cli",
-      "model": "tiny.en",
-      "modelPath": "~/.grok/models/stt/whisper.cpp/ggml-tiny.en.bin",
-      "autoDownloadModel": true,
       "language": "en"
     }
   }
@@ -301,14 +271,10 @@ Available models (trade size for accuracy): `tiny.en` (75 MB), `base.en` (142 MB
 ```
 
 
-| Setting             | Default           | Description                                                              |
-| ------------------- | ----------------- | ------------------------------------------------------------------------ |
-| `enabled`           | `true`            | Set to `false` to ignore voice/audio messages entirely.                  |
-| `binaryPath`        | `whisper-cli`     | Absolute path or command name for the whisper.cpp CLI binary.            |
-| `model`             | `tiny.en`         | Model alias used for auto-download resolution.                           |
-| `modelPath`         | *(auto-resolved)* | Explicit path to a `.bin` model file. Overrides `model` + auto-download. |
-| `autoDownloadModel` | `true`            | Download the model into `~/.grok/models/stt/whisper.cpp` on first use.   |
-| `language`          | `en`              | Whisper language code passed to the CLI.                                 |
+| Setting    | Default | Description                                                                                                           |
+| ---------- | ------- | --------------------------------------------------------------------------------------------------------------------- |
+| `enabled`  | `true`  | Set to `false` to ignore voice/audio messages entirely.                                                               |
+| `language` | `en`    | Language code forwarded to `/v1/stt`. Enables Inverse Text Normalization (numbers, currencies, units → written form). |
 
 
 Optional headless flow when you do not want the TUI open:
@@ -354,7 +320,7 @@ Hook commands receive JSON on **stdin** (event details) and can return JSON on *
 
 ## Instructions & project brain
 
-- `**AGENTS.md**` — merged from git root down to your cwd (Codex-style; see repo docs). `**AGENTS.override.md**` wins per directory when present.
+- `**AGENTS.md`** — merged from git root down to your cwd (Codex-style; see repo docs). `**AGENTS.override.md**` wins per directory when present.
 
 ---
 
@@ -372,6 +338,8 @@ Grok CLI can run shell commands inside a [Shuru](https://github.com/superhq-ai/s
 
 Enable it with `--sandbox` on the CLI, or toggle it from the TUI with `/sandbox`.
 
+On the first interactive run in a new directory, Grok asks whether to remember sandbox or host mode for that workspace and stores the choice in `~/.grok/workspace-trust.json`. Explicit `--sandbox` / `--no-sandbox` flags and non-interactive commands keep their current behavior.
+
 When sandbox mode is active you can configure:
 
 - **Network** — off by default; enable with `--allow-net`, restrict with `--allow-host`
@@ -384,7 +352,7 @@ All settings are saved in `~/.grok/user-settings.json` (user) and `.grok/setting
 
 ### Verify
 
-Run `**/verify`** in the TUI or `**--verify**` on the CLI to verify your app locally:
+Run `**/verify`** in the TUI or `**--verify`** on the CLI to verify your app locally:
 
 ```bash
 grok --verify
@@ -392,6 +360,107 @@ grok -d /path/to/your/app --verify
 ```
 
 The agent inspects your project, figures out how to build and run it, spins up a sandbox, and produces a verification report with screenshots and video evidence. Works with any app type.
+
+---
+
+## Troubleshooting
+
+Common issues and solutions:
+
+### Installation issues
+
+**Install script fails on macOS**
+
+Make sure you have a modern shell and `curl` available:
+
+```bash
+# Verify curl is installed
+which curl
+
+# If using an outdated shell, try with bash explicitly
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/superagent-ai/grok-cli/main/install.sh)"
+```
+
+**Bun not found**
+
+The install script bundles Bun, but if you want to use your own:
+
+```bash
+curl -fsSL https://bun.sh/install | bash
+bun add -g grok-dev
+```
+
+### API key issues
+
+**"Missing GROK_API_KEY" error**
+
+Set your API key using one of these methods:
+
+```bash
+# Environment variable
+export GROK_API_KEY=your_key_here
+
+# Or save to user settings
+grok -k your_key_here
+```
+
+Get your API key from [x.ai](https://x.ai).
+
+### Terminal UI issues
+
+**UI doesn't render correctly**
+
+Try a different terminal emulator. Recommended:
+
+- WezTerm (cross-platform)
+- Alacritty (cross-platform)
+- Ghostty (macOS/Linux)
+- Kitty (macOS/Linux)
+
+**Screen flickering or artifacts**
+
+Ensure your terminal supports true color and Unicode. Update your terminal emulator to the latest version.
+
+### Telegram remote control
+
+**Bot doesn't respond**
+
+1. Verify `TELEGRAM_BOT_TOKEN` is set correctly
+2. Ensure the CLI process is still running (long polling lives in the process)
+3. Check that you've completed the `/pair` flow and been approved
+
+**Voice messages not transcribing**
+
+- Verify `GROK_API_KEY` is set (transcription uses the same key)
+- Check `~/.grok/user-settings.json` has `telegram.audioInput.enabled: true`
+
+### Sandbox mode
+
+**Sandbox only works on macOS 14+ with Apple Silicon**
+
+If you're on Intel Mac or Linux, sandbox mode is not available. Use standard mode without `--sandbox`.
+
+### Performance issues
+
+**Slow response times**
+
+- Check your network connection to x.ai API
+- Try `grok-4.20-non-reasoning` for non-reasoning workloads
+- Reduce `--max-tool-rounds` for headless runs
+
+**High memory usage**
+
+- Long-running sessions accumulate context; start a fresh session periodically
+- Use `/compact` in TUI to compress conversation history
+
+### Getting help
+
+- Check existing [issues](https://github.com/superagent-ai/grok-cli/issues)
+- Open a new issue with:
+  - OS and terminal emulator version
+  - Grok CLI version (`grok --version`)
+  - Steps to reproduce
+  - Error messages or logs
 
 ---
 
@@ -413,6 +482,12 @@ bun run dev      # run from source (Bun)
 bun run typecheck
 bun run lint
 ```
+
+---
+
+## Trademarks
+
+"Grok" is a registered trademark of xAI Corp. This project is not affiliated with, endorsed by, or sponsored by xAI Corp. All trademarks belong to their respective owners.
 
 ---
 
